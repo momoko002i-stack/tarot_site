@@ -8,21 +8,33 @@ from openai import OpenAI
 from PIL import Image
 
 
-# Streamlit Cloudでは Secrets に OPENAI_API_KEY を入れるので、ここは空のままでOK
+# =========================
+# APIキー設定
+# =========================
+# Streamlit Cloudでは Secrets に
+# OPENAI_API_KEY = "sk-..."
+# と入れるので、ここは空のままでOK
 OPENAI_API_KEY = ""
 
 
+# =========================
+# 基本設定
+# =========================
 st.set_page_config(
     page_title="Tarot Reflection",
     page_icon="🃏",
     layout="centered",
 )
 
-
 BASE_DIR = Path(__file__).parent
+
+# 画像が app.py と同じ場所に並んでいる前提
 CARDS_DIR = BASE_DIR
 
 
+# =========================
+# カード情報
+# =========================
 TAROT_CARDS = [
     {
         "number": 0,
@@ -203,6 +215,9 @@ TAROT_CARDS = [
 ]
 
 
+# =========================
+# 関数
+# =========================
 def get_api_key() -> str:
     if OPENAI_API_KEY.strip():
         return OPENAI_API_KEY.strip()
@@ -223,7 +238,7 @@ def get_card_meaning(card: dict, orientation: str) -> str:
     return card["reversed"]
 
 
-def generate_reflection(question: str, card: dict, impression: str, orientation: str) -> str:
+def generate_reflection(question: str, chosen_number: int, card: dict, impression: str, orientation: str) -> str:
     api_key = get_api_key()
 
     if not api_key:
@@ -239,12 +254,19 @@ def generate_reflection(question: str, card: dict, impression: str, orientation:
 あなたは、未来を断定する占い師ではありません。
 タロットカードを使って、ユーザーの無意識や感情を丁寧に言語化する内省の案内人です。
 
+このサイトでは、ユーザーが選ぶ0〜21の数字はカード番号そのものではありません。
+その数字は、カードを開く前の儀式的な選択、入口、揺らぎとして扱ってください。
+実際に出たカードはランダムです。
+
 以下の情報をもとに、日本語で内省を促す文章を書いてください。
 
 【ユーザーの悩み・問い】
 {question}
 
-【引いたカード】
+【ユーザーが選んだ数字】
+{chosen_number}
+
+【ランダムに出たカード】
 {card["number"]}: {card["name_en"]} / {card["name_ja"]}
 
 【カードの向き】
@@ -262,6 +284,7 @@ def generate_reflection(question: str, card: dict, impression: str, orientation:
 - カードの意味を押しつけない
 - ユーザーが画像を見て感じたことを最優先する
 - 正位置/逆位置は、良い悪いではなく、見方の違いとして扱う
+- ユーザーが選んだ数字は、カード番号ではなく、問いに入るための象徴として軽く扱う
 - やさしく、静かで、詩的すぎない文章にする
 - 300〜500字程度
 - 最後は、ユーザー自身に返す問いで終える
@@ -378,20 +401,29 @@ def show_shuffle_animation():
 def reset_reading():
     st.session_state.step = 1
     st.session_state.question = ""
-    st.session_state.selected_number = 0
+    st.session_state.chosen_number = 0
+    st.session_state.selected_card_index = 0
     st.session_state.orientation = "正位置"
     st.session_state.impression = ""
     st.session_state.reflection = ""
 
 
+# =========================
+# セッション初期化
+# =========================
 if "step" not in st.session_state:
     st.session_state.step = 1
 
 if "question" not in st.session_state:
     st.session_state.question = ""
 
-if "selected_number" not in st.session_state:
-    st.session_state.selected_number = 0
+# ユーザーが選んだ数字。カード番号とは関係ない。
+if "chosen_number" not in st.session_state:
+    st.session_state.chosen_number = 0
+
+# 実際に出るカード。ランダム。
+if "selected_card_index" not in st.session_state:
+    st.session_state.selected_card_index = 0
 
 if "orientation" not in st.session_state:
     st.session_state.orientation = "正位置"
@@ -403,6 +435,9 @@ if "reflection" not in st.session_state:
     st.session_state.reflection = ""
 
 
+# =========================
+# CSS
+# =========================
 st.markdown(
     """
     <style>
@@ -482,12 +517,21 @@ st.markdown(
         line-height: 2;
         white-space: pre-wrap;
     }
+
+    .small-note {
+        font-size: 0.9rem;
+        color: #7d715f;
+        line-height: 1.8;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
+# =========================
+# 画面
+# =========================
 st.title("Tarot Reflection")
 
 st.markdown(
@@ -502,6 +546,9 @@ st.markdown(
 )
 
 
+# -------------------------
+# STEP 1
+# -------------------------
 if st.session_state.step == 1:
     st.subheader("1. 問いを置く")
 
@@ -512,12 +559,22 @@ if st.session_state.step == 1:
         value=st.session_state.question,
     )
 
-    selected_number = st.slider(
+    chosen_number = st.slider(
         "0〜21の中から、いま気になる数字をひとつ選んでください。",
         min_value=0,
         max_value=21,
-        value=st.session_state.selected_number,
+        value=st.session_state.chosen_number,
         step=1,
+    )
+
+    st.markdown(
+        """
+        <div class="small-note">
+        ※ 選んだ数字はカード番号ではありません。<br>
+        カードを開く前の、小さな儀式として扱われます。
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     if st.button("カードをひらく", use_container_width=True):
@@ -525,7 +582,13 @@ if st.session_state.step == 1:
             st.warning("まず、悩みや問いを書いてください。")
         else:
             st.session_state.question = question.strip()
-            st.session_state.selected_number = selected_number
+            st.session_state.chosen_number = chosen_number
+
+            # ここが大事：
+            # 選んだ数字とは関係なく、カードはランダムに出る
+            st.session_state.selected_card_index = random.randint(0, 21)
+
+            # 正位置 / 逆位置もランダム
             st.session_state.orientation = random.choice(["正位置", "逆位置"])
 
             show_shuffle_animation()
@@ -535,8 +598,11 @@ if st.session_state.step == 1:
             st.rerun()
 
 
+# -------------------------
+# STEP 2
+# -------------------------
 elif st.session_state.step == 2:
-    card = TAROT_CARDS[st.session_state.selected_number]
+    card = TAROT_CARDS[st.session_state.selected_card_index]
     orientation = st.session_state.orientation
     image_path = CARDS_DIR / card["image"]
     meaning = get_card_meaning(card, orientation)
@@ -590,6 +656,7 @@ elif st.session_state.step == 2:
                 with st.spinner("言葉になりきらない感覚を、そっと拾っています..."):
                     st.session_state.reflection = generate_reflection(
                         question=st.session_state.question,
+                        chosen_number=st.session_state.chosen_number,
                         card=card,
                         impression=st.session_state.impression,
                         orientation=orientation,
@@ -599,8 +666,11 @@ elif st.session_state.step == 2:
                 st.rerun()
 
 
+# -------------------------
+# STEP 3
+# -------------------------
 elif st.session_state.step == 3:
-    card = TAROT_CARDS[st.session_state.selected_number]
+    card = TAROT_CARDS[st.session_state.selected_card_index]
     orientation = st.session_state.orientation
     image_path = CARDS_DIR / card["image"]
 
@@ -619,6 +689,9 @@ elif st.session_state.step == 3:
 
     st.markdown("#### あなたの問い")
     st.write(st.session_state.question)
+
+    st.markdown("#### あなたが選んだ数字")
+    st.write(st.session_state.chosen_number)
 
     st.markdown("#### カードを見て感じたこと")
     st.write(st.session_state.impression)
