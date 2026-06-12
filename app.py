@@ -11,7 +11,7 @@ OPENAI_API_KEY = ""
 st.set_page_config(page_title="Tarot Reflection", page_icon="🃏", layout="centered")
 
 BASE_DIR = Path(__file__).parent
-CARDS_DIR = BASE_DIR / "cards"
+CARDS_DIR = BASE_DIR
 
 TAROT_CARDS = [
     {"number": 0, "name_en": "THE FOOL", "name_ja": "愚者", "image": "00_fool.jpg", "symbol": "始まり、無垢、未知への一歩、自由、衝動、まだ形になる前の可能性"},
